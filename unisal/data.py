@@ -1174,6 +1174,73 @@ class FolderVideoDataset(Dataset):
         return self.get_data(item, 0)
 
 
+class FolderVideoDatasetV2(FolderVideoDataset):
+
+    def __init__(self, video_path, frame_modulo=None, source=None):
+        self.video_path = str(video_path)
+        self.frame_modulo = frame_modulo or 5
+        self.preproc_cfg = {
+            'rgb_mean': (0.485, 0.456, 0.406),
+            'rgb_std': (0.229, 0.224, 0.225),
+        }
+
+        video_files = [str(f) for f in video_path.glob("*mp4")]
+        self.video_path = video_files[0]
+
+        cap = cv2.VideoCapture(self.video_path)
+        n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) - 1
+
+        frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        self.fps = cap.get(cv2.CAP_PROP_FPS)
+
+        cap.release()
+
+        self.vid_nr_array = [0]
+        self.n_images_dict = {0: n_frames}
+
+        img_size = (frame_w, frame_h)
+        self.target_size_dict = {0: img_size}
+
+        self.out_size = get_optimal_out_size(img_size)
+        print(f"Dataset {self.video_path} intialized with "
+              f"{frame_w}x{frame_h}@{self.fps} and {n_frames} frames "
+              f"Calculated output frame size {self.out_size}")
+
+    def generate_frames(self, seek):
+        cap = cv2.VideoCapture(self.video_path)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, seek);
+
+        while cap.isOpened():
+            # Extract the frame
+            ret, frame = cap.read()
+            if not ret:
+                continue
+
+            frame = np.ascontiguousarray(frame[:, :, ::-1])
+            yield frame
+
+            print(".", end="")
+
+        cap.release()
+
+    def get_data(self, vid_nr, start):
+        target_size = self.target_size_dict[vid_nr]
+
+        # seek must be given as a 0-based index
+        n_images = self.n_images_dict[vid_nr]
+        frame_nrs = range(start, n_images)
+        seek = start / n_images
+
+        print(f"Fetching {self.video_path} from {seek*100:.2f}%")
+
+        frame_seq = self.generate_frames(seek)
+        frame_seq = self.preprocess_sequence(frame_seq)
+
+        return frame_nrs, frame_seq, target_size
+
+
 class FolderImageDataset(Dataset):
 
     def __init__(self, images_path):
