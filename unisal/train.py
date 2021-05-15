@@ -859,7 +859,7 @@ class Trainer(utils.KwConfigClass):
                 print("No MIT1003 fine-tuned weights found.")
             source = 'SALICON'
 
-        images_path = folder_path / 'images'
+        images_path = folder_path
         torch.cuda.empty_cache()
 
         if load_weights:
@@ -876,14 +876,22 @@ class Trainer(utils.KwConfigClass):
         with torch.no_grad():
             if is_video:
                 frame_modulo = 5 if source == 'DHF1K' else 4
-                dataset = data.FolderVideoDataset(
+                dataset = data.FolderVideoDatasetV2(
                     images_path, source=source, frame_modulo=frame_modulo)
                 pred_dir = folder_path / 'saliency'
                 pred_dir.mkdir(exist_ok=True)
 
+                filename = 'output.avi'
+                pred_file = pred_dir / filename
+
                 pred_seq = self.run_inference(
                     source, 0, dataset=dataset, phase=None,
                     return_predictions=True, folder_suffix=None, **kwargs)
+
+
+                # Define the codec and create VideoWriter
+                fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                out = cv2.VideoWriter(pred_file, fourcc, dataset.fps, dataset.out_size)
 
                 # Iterate over the prediction frames
                 for frame_idx, smap in enumerate(torch.unbind(pred_seq, dim=1)):
@@ -893,12 +901,11 @@ class Trainer(utils.KwConfigClass):
                     smap = torch.squeeze(smap)
                     smap = utils.to_numpy(smap)
 
-                    # Save prediction as image
-                    filename = dataset.frame_files[frame_idx].name
+                    # Save prediction frame
                     smap = (smap / np.amax(smap) * 255).astype(np.uint8)
-                    pred_file = pred_dir / filename
-                    cv2.imwrite(
-                        str(pred_file), smap, [cv2.IMWRITE_JPEG_QUALITY, 100])
+                    out.write(smap)
+
+                out.release()
 
             else:
                 dataset = data.FolderImageDataset(images_path)
